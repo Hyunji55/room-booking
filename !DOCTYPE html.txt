@@ -1,0 +1,934 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>초등학교 특별실 예약 시스템</title>
+  <!-- Pretendard 글꼴 CDN -->
+  <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+  <!-- Supabase JS v2 CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- Chart.js v4 CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.js"></script>
+  <style>
+    :root {
+      --primary: #10b981;
+      --primary-dark: #059669;
+      --primary-light: #ecfdf5;
+      --bg-color: #f8fafc;
+      --card-bg: #ffffff;
+      --text-main: #1e293b;
+      --text-sub: #64748b;
+      --border-color: #e2e8f0;
+      --danger: #ef4444;
+      --danger-light: #fef2f2;
+      --warning: #f59e0b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Pretendard', sans-serif; }
+    body { background-color: var(--bg-color); color: var(--text-main); line-height: 1.5; padding: 20px; }
+    .container { max-width: 1000px; margin: 0 auto; }
+
+    /* 키 설정 경고 배너 */
+    #config-alert { background: var(--danger-light); border: 1px solid var(--danger); color: var(--danger); padding: 16px; border-radius: 12px; margin-bottom: 20px; font-weight: 600; text-align: center; display: none; }
+
+    /* 상단 탭 */
+    .tabs { display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 2px solid var(--border-color); padding-bottom: 10px; }
+    .tab-btn { background: none; border: none; font-size: 18px; font-weight: 700; color: var(--text-sub); cursor: pointer; padding: 8px 16px; border-radius: 8px; transition: all 0.2s; }
+    .tab-btn.active { background: var(--primary); color: white; }
+
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    /* 카드 스타일 */
+    .card { background: var(--card-bg); border-radius: 16px; padding: 24px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -2px rgba(0,0,0,0.05); margin-bottom: 24px; border: 1px solid var(--border-color); }
+    .card-title { font-size: 18px; font-weight: 700; margin-bottom: 16px; color: var(--text-main); display: flex; align-items: center; gap: 8px; }
+
+    /* 폼 레이아웃 */
+    .form-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .form-group { display: flex; flex-direction: column; gap: 6px; }
+    .form-group.full { grid-column: 1 / -1; }
+    label { font-size: 14px; font-weight: 600; color: var(--text-sub); }
+    input, select, textarea { padding: 10px 14px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 16px; outline: none; transition: border-color 0.2s; background: #fff; }
+    input:focus, select:focus, textarea:focus { border-color: var(--primary); ring: 2px var(--primary-light); }
+    textarea { resize: vertical; height: 60px; }
+
+    button.btn { background: var(--primary); color: white; border: none; padding: 12px 20px; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: background 0.2s; width: 100%; }
+    button.btn:hover { background: var(--primary-dark); }
+    button.btn:disabled { background: var(--text-sub); cursor: not-allowed; }
+
+    /* 시간표 스타일 */
+    .schedule-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px; }
+    .week-nav { display: flex; align-items: center; gap: 12px; font-weight: 600; }
+    .week-nav button { background: #f1f5f9; border: 1px solid var(--border-color); padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; }
+    .week-nav button:hover { background: #e2e8f0; }
+
+    .table-container { overflow-x: auto; }
+    table.schedule-table { width: 100%; border-collapse: collapse; text-align: center; font-size: 14px; min-width: 650px; }
+    table.schedule-table th, table.schedule-table td { border: 1px solid var(--border-color); padding: 10px; }
+    table.schedule-table th { background: #f8fafc; font-weight: 700; color: var(--text-sub); }
+    .slot-cell { cursor: pointer; transition: background 0.1s; height: 50px; vertical-align: middle; }
+    .slot-cell:hover { background: var(--primary-light); }
+    .slot-cell.past { background: #f1f5f9; color: #94a3b8; cursor: not-allowed; }
+    .slot-cell.today { background: #fefce8; }
+    .slot-reserved { background: #e0f2fe; color: #0369a1; font-weight: 600; }
+
+    /* 검색 및 목록 */
+    .search-filter { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px; }
+    .list-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    .list-table th, .list-table td { border-bottom: 1px solid var(--border-color); padding: 12px 8px; text-align: left; }
+    .list-table th { color: var(--text-sub); font-weight: 700; background: #f8fafc; }
+    .cancel-btn { background: var(--danger); color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600; }
+    .cancel-btn:hover { background: #dc2626; }
+
+    /* 통계 영역 */
+    .stats-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 20px; }
+    .stat-box { background: #f1f5f9; padding: 16px; border-radius: 12px; text-align: center; }
+    .stat-box .value { font-size: 22px; font-weight: 700; color: var(--primary-dark); margin-top: 4px; }
+    .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .chart-card { background: white; border: 1px solid var(--border-color); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; align-items: center; }
+    .chart-card.full { grid-column: 1 / -1; }
+    .chart-container { position: relative; width: 100%; height: 280px; max-height: 300px; }
+
+    /* 토스트 알림 */
+    #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(100px); background: #333; color: white; padding: 12px 24px; border-radius: 8px; font-weight: 600; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); transition: transform 0.3s ease; z-index: 1000; }
+    #toast.show { transform: translateX(-50%) translateY(0); }
+    #toast.success { background: var(--primary-dark); }
+    #toast.error { background: var(--danger); }
+
+    /* 모바일 반응형 */
+    @media (max-width: 760px) {
+      .form-grid { grid-template-columns: 1fr; }
+      .charts-grid { grid-template-columns: 1fr; }
+      body { padding: 10px; }
+      .card { padding: 16px; }
+    }
+  </style>
+</head>
+<body>
+
+  <div id="config-alert">
+    ⚠️ Supabase 설정값이 비어있거나 예시 상태입니다. index.html 상단의 SUPABASE_URL과 SUPABASE_KEY를 입력해 주세요.
+  </div>
+
+  <div class="container">
+    <!-- 상단 탭 -->
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab('booking')">특별실 예약 및 시간표</button>
+      <button class="tab-btn" onclick="switchTab('stats')">예약 통계</button>
+    </div>
+
+    <!-- 예약 탭 콘텐츠 -->
+    <div id="tab-booking" class="tab-content active">
+      <!-- F1. 예약 등록 카드 -->
+      <div class="card">
+        <div class="card-title">📌 특별실 예약 등록</div>
+        <form id="reservation-form" onsubmit="handleReservationSubmit(event)">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>특별실 선택 *</label>
+              <select id="room-select" required></select>
+            </div>
+            <div class="form-group">
+              <label>예약 날짜 *</label>
+              <input type="date" id="reserved-date" required>
+            </div>
+            <div class="form-group">
+              <label>교시 선택 *</label>
+              <select id="period-select" required>
+                <option value="1">1교시</option>
+                <option value="2">2교시</option>
+                <option value="3">3교시</option>
+                <option value="4">4교시</option>
+                <option value="5">5교시</option>
+                <option value="6">6교시</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>교사 이름 (최대 20자) *</label>
+              <input type="text" id="teacher-name" maxlength="20" placeholder="예: 김민지" required>
+            </div>
+            <div class="form-group">
+              <label>학년 (1~6) *</label>
+              <select id="grade-select" required>
+                <option value="1">1학년</option>
+                <option value="2">2학년</option>
+                <option value="3">3학년</option>
+                <option value="4" selected>4학년</option>
+                <option value="5">5학년</option>
+                <option value="6">6학년</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>반 (1~15, 선택)</label>
+              <input type="number" id="class-no" min="1" max="15" placeholder="예: 2">
+            </div>
+            <div class="form-group full">
+              <label>사용 목적 (100자 이하, 선택)</label>
+              <textarea id="purpose" maxlength="100" placeholder="수업 내용이나 활동 목적을 적어주세요."></textarea>
+            </div>
+          </div>
+          <button type="submit" id="submit-btn" class="btn" style="margin-top: 16px;">예약하기</button>
+        </form>
+      </div>
+
+      <!-- F2. 주간 시간표 카드 -->
+      <div class="card">
+        <div class="schedule-header">
+          <div class="card-title" style="margin:0;">📅 주간 시간표</div>
+          <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+            <select id="schedule-room-select" onchange="loadWeeklySchedule()" style="padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border-color);"></select>
+            <div class="week-nav">
+              <button onclick="changeWeek(-1)">◀ 이전 주</button>
+              <span id="week-range-display">기간 표시</span>
+              <button onclick="changeWeek(1)">다음 주 ▶</button>
+              <button onclick="goCurrentWeek()" style="background:var(--primary-light); color:var(--primary-dark);">이번 주</button>
+            </div>
+          </div>
+        </div>
+        <div class="table-container">
+          <table class="schedule-table">
+            <thead>
+              <tr>
+                <th style="width: 70px;">교시</th>
+                <th>월</th>
+                <th>화</th>
+                <th>수</th>
+                <th>목</th>
+                <th>금</th>
+              </tr>
+            </thead>
+            <tbody id="schedule-tbody">
+              <!-- JS로 렌더링 -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- F3 & F4. 검색 및 취소 카드 -->
+      <div class="card">
+        <div class="card-title">🔍 예약 검색 및 취소</div>
+        <div class="search-filter">
+          <input type="text" id="search-teacher" placeholder="교사 이름 검색..." oninput="debounceSearch()">
+          <select id="search-room" onchange="loadReservationList()">
+            <option value="">모든 특별실</option>
+          </select>
+          <input type="date" id="search-date" onchange="loadReservationList()">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <label style="font-size: 14px; cursor: pointer;"><input type="checkbox" id="search-past" onchange="loadReservationList()"> 지난 예약도 보기</label>
+          </div>
+          <button onclick="resetSearch()" style="background:#e2e8f0; color:var(--text-main); border:none; padding:8px; border-radius:6px; cursor:pointer; font-weight:600;">초기화</button>
+        </div>
+        <div class="table-container">
+          <table class="list-table">
+            <thead>
+              <tr>
+                <th>날짜(요일)</th>
+                <th>교시 / 특별실</th>
+                <th>교사 / 학년반</th>
+                <th>사용 목적</th>
+                <th>관리</th>
+              </tr>
+            </thead>
+            <tbody id="reservation-list-tbody">
+              <!-- JS로 렌더링 -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- 통계 탭 콘텐츠 (F5) -->
+    <div id="tab-stats" class="tab-content">
+      <div class="card">
+        <div class="schedule-header">
+          <div class="card-title" style="margin:0;">📊 특별실 이용 통계</div>
+          <div style="display: flex; gap: 12px; align-items: center;">
+            <select id="stats-period-type" onchange="loadStats()" style="padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border-color);">
+              <option value="week">이번 주 (월~금)</option>
+              <option value="month">이번 달 (1일~말일)</option>
+            </select>
+            <button class="btn" onclick="loadStats()" style="padding: 6px 16px; font-size: 14px; width: auto;">새로고침</button>
+          </div>
+        </div>
+
+        <div class="stats-summary" id="stats-summary-box">
+          <!-- 요약 정보 렌더링 -->
+        </div>
+
+        <div class="charts-grid">
+          <div class="chart-card full">
+            <h3 style="font-size: 15px; font-weight: 700; margin-bottom: 12px; color: var(--text-sub);">특별실별 이용률 (%)</h3>
+            <div class="chart-container">
+              <canvas id="chart-room-usage"></canvas>
+            </div>
+          </div>
+          <div class="chart-card">
+            <h3 style="font-size: 15px; font-weight: 700; margin-bottom: 12px; color: var(--text-sub);">요일·교시별 혼잡도</h3>
+            <div class="chart-container">
+              <canvas id="chart-congestion"></canvas>
+            </div>
+          </div>
+          <div class="chart-card">
+            <h3 style="font-size: 15px; font-weight: 700; margin-bottom: 12px; color: var(--text-sub);">학년별 이용 횟수</h3>
+            <div class="chart-container">
+              <canvas id="chart-grade-count"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 토스트 알림 컴포넌트 -->
+  <div id="toast">알림 메시지</div>
+
+  <script>
+    // ==========================================
+    // 설정 및 초기화
+    // ==========================================
+    const SUPABASE_URL = "https://YOUR_PROJECT_ID.supabase.co"; // 본인 Supabase URL 입력
+    const SUPABASE_KEY = "sb_publishable_YOUR_KEY_HERE";        // 본인 Supabase Publishable Key 입력
+
+    if (!SUPABASE_URL.includes("supabase.co") || SUPABASE_KEY.includes("YOUR_KEY")) {
+      document.getElementById("config-alert").style.display = "block";
+    }
+
+    const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    let roomsData = [];
+    let currentMonday = getMonday(new Date());
+    let searchDebounceTimer = null;
+    let chartRoomUsageInstance = null;
+    let chartCongestionInstance = null;
+    let chartGradeCountInstance = null;
+
+    // 앱 시작 시 실행
+    window.addEventListener("DOMContentLoaded", async () => {
+      initDateInputs();
+      await fetchRooms();
+      loadWeeklySchedule();
+      loadReservationList();
+    });
+
+    // ==========================================
+    // 유틸리티 함수
+    // ==========================================
+    function escapeHTML(str) {
+      if (!str) return "";
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    function showToast(message, type = "success") {
+      const toast = document.getElementById("toast");
+      toast.textContent = message;
+      toast.className = `show ${type}`;
+      setTimeout(() => {
+        toast.className = "";
+      }, 3000);
+    }
+
+    function getLocalTodayString() {
+      const d = new Date();
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+
+    function getMonday(d) {
+      d = new Date(d);
+      const day = d.getDay();
+      const diff = d.getDate() - day + (day === 0 ? -6 : 1); // 월요일 기준
+      return new Date(d.setDate(diff));
+    }
+
+    function formatDateStr(dateObj) {
+      const y = dateObj.getFullYear();
+      const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+      const d = String(dateObj.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+
+    function formatDisplayDate(dateStr) {
+      const [y, m, d] = dateStr.split('-');
+      const dateObj = new Date(y, m - 1, d);
+      const days = ['일', '월', '화', '수', '목', '금', '토'];
+      const dayName = days[dateObj.getDay()];
+      return `${parseInt(m)}월 ${parseInt(d)}일 (${dayName})`;
+    }
+
+    function initDateInputs() {
+      const todayStr = getLocalTodayString();
+      const todayDate = new Date();
+      // 주말이면 다음 월요일 기본값
+      if (todayDate.getDay() === 0 || todayDate.getDay() === 6) {
+        const nextMon = new Date(currentMonday);
+        nextMon.setDate(nextMon.getDate() + 7);
+        document.getElementById("reserved-date").value = formatDateStr(nextMon);
+      } else {
+        document.getElementById("reserved-date").value = todayStr;
+      }
+      document.getElementById("reserved-date").min = todayStr;
+    }
+
+    function switchTab(tabName) {
+      document.querySelectorAll(".tab-btn").forEach(btn => btn.classList.remove("active"));
+      document.querySelectorAll(".tab-content").forEach(content => content.classList.remove("active"));
+      
+      if (tabName === 'booking') {
+        document.querySelector("button[onclick=\"switchTab('booking')\"]").classList.add("active");
+        document.getElementById("tab-booking").classList.add("active");
+      } else {
+        document.querySelector("button[onclick=\"switchTab('stats')\"]").classList.add("active");
+        document.getElementById("tab-stats").classList.add("active");
+        loadStats();
+      }
+    }
+
+    // ==========================================
+    // 특별실 목록 불러오기
+    // ==========================================
+    async function fetchRooms() {
+      const { data, error } = await db.from("rooms").select("*").order("id");
+      if (error) {
+        showToast("특별실 목록을 불러오지 못했습니다.", "error");
+        return;
+      }
+      roomsData = data || [];
+      
+      const roomSelect = document.getElementById("room-select");
+      const scheduleRoomSelect = document.getElementById("schedule-room-select");
+      const searchRoomSelect = document.getElementById("search-room");
+
+      roomSelect.innerHTML = "";
+      scheduleRoomSelect.innerHTML = "";
+      searchRoomSelect.innerHTML = '<option value="">모든 특별실</option>';
+
+      roomsData.forEach(room => {
+        const opt1 = document.createElement("option");
+        opt1.value = room.id;
+        opt1.textContent = `${room.name} (${room.location || ''})`;
+        roomSelect.appendChild(opt1);
+
+        const opt2 = document.createElement("option");
+        opt2.value = room.id;
+        opt2.textContent = `${room.name} (${room.location || ''})`;
+        scheduleRoomSelect.appendChild(opt2);
+
+        const opt3 = document.createElement("option");
+        opt3.value = room.id;
+        opt3.textContent = room.name;
+        searchRoomSelect.appendChild(opt3);
+      });
+    }
+
+    // ==========================================
+    // F1. 예약 등록
+    // ==========================================
+    async function handleReservationSubmit(event) {
+      event.preventDefault();
+
+      const roomId = document.getElementById("room-select").value;
+      const reservedDate = document.getElementById("reserved-date").value;
+      const period = parseInt(document.getElementById("period-select").value);
+      const teacherName = document.getElementById("teacher-name").value.trim();
+      const grade = parseInt(document.getElementById("grade-select").value);
+      const classNoVal = document.getElementById("class-no").value;
+      const classNo = classNoVal ? parseInt(classNoVal) : null;
+      const purpose = document.getElementById("purpose").value.trim();
+
+      // 프론트엔드 검사
+      if (!reservedDate || !teacherName) {
+        showToast("필수 입력값을 확인해주세요.", "error");
+        return;
+      }
+      const selectedDateObj = new Date(reservedDate);
+      const todayObj = new Date(getLocalTodayString());
+      if (selectedDateObj < todayObj) {
+        showToast("지난 날짜는 예약할 수 없습니다.", "error");
+        return;
+      }
+      const dayOfWeek = selectedDateObj.getDay();
+      if (dayOfWeek === 0 || dayOfWeek === 6) {
+        showToast("주말에는 예약할 수 없습니다.", "error");
+        return;
+      }
+
+      const submitBtn = document.getElementById("submit-btn");
+      submitBtn.disabled = true;
+      submitBtn.textContent = "저장 중…";
+
+      const payload = {
+        room_id: parseInt(roomId),
+        reserved_date: reservedDate,
+        period: period,
+        teacher_name: teacherName,
+        grade: grade,
+        class_no: classNo,
+        purpose: purpose || null
+      };
+
+      const { data, error } = await db.from("reservations").insert(payload);
+
+      submitBtn.disabled = false;
+      submitBtn.textContent = "예약하기";
+
+      if (error) {
+        handleDbError(error);
+        if (error.code === '23505') {
+          loadWeeklySchedule(); // 다른 사람이 먼저 예약한 경우 시간표 동기화
+        }
+        return;
+      }
+
+      const roomObj = roomsData.find(r => r.id == roomId);
+      const roomName = roomObj ? roomObj.name : "특별실";
+      showToast(`${formatDisplayDate(reservedDate)} ${period}교시 ${roomName} 예약 완료!`, "success");
+      
+      document.getElementById("purpose").value = "";
+      
+      // 시간표, 목록, 통계 새로고침 및 해당 특별실로 시간표 맞춤
+      document.getElementById("schedule-room-select").value = roomId;
+      loadWeeklySchedule();
+      loadReservationList();
+    }
+
+    // ==========================================
+    // F2. 주간 시간표
+    // ==========================================
+    function changeWeek(direction) {
+      currentMonday.setDate(currentMonday.getDate() + (direction * 7));
+      loadWeeklySchedule();
+    }
+
+    function goCurrentWeek() {
+      currentMonday = getMonday(new Date());
+      loadWeeklySchedule();
+    }
+
+    async function loadWeeklySchedule() {
+      const roomId = document.getElementById("schedule-room-select").value;
+      if (!roomId) return;
+
+      // 월~금 날짜 계산
+      const weekDates = [];
+      let tempDate = new Date(currentMonday);
+      for (let i = 0; i < 5; i++) {
+        weekDates.push(formatDateStr(tempDate));
+        tempDate.setDate(tempDate.getDate() + 1);
+      }
+
+      // 기간 표시 갱신
+      document.getElementById("week-range-display").textContent = 
+        `${formatDisplayDate(weekDates[0])} ~ ${formatDisplayDate(weekDates[4])}`;
+
+      // 해당 주의 예약 데이터 조회
+      const { data: reservations, error } = await db
+        .from("reservations")
+        .select("*")
+        .eq("room_id", roomId)
+        .gte("reserved_date", weekDates[0])
+        .lte("reserved_date", weekDates[4]);
+
+      if (error) {
+        showToast("시간표를 불러오지 못했습니다.", "error");
+        return;
+      }
+
+      // 맵핑 생성 (reserved_date_period)
+      const resMap = {};
+      (reservations || []).forEach(r => {
+        resMap[`${r.reserved_date}_${r.period}`] = r;
+      });
+
+      const todayStr = getLocalTodayString();
+      const tbody = document.getElementById("schedule-tbody");
+      tbody.innerHTML = "";
+
+      for (let p = 1; p <= 6; p++) {
+        let tr = document.createElement("tr");
+        let th = document.createElement("th");
+        th.textContent = `${p}교시`;
+        tr.appendChild(th);
+
+        for (let d = 0; d < 5; d++) {
+          const dateStr = weekDates[d];
+          const cellKey = `${dateStr}_${p}`;
+          const res = resMap[cellKey];
+          const td = document.createElement("td");
+
+          const isPast = dateStr < todayStr;
+          const isToday = dateStr === todayStr;
+
+          if (isPast) td.classList.add("past");
+          if (isToday) td.classList.add("today");
+
+          if (res) {
+            td.classList.add("slot-reserved");
+            const classStr = res.class_no ? ` ${res.grade}학년 ${res.class_no}반` : ` ${res.grade}학년`;
+            td.innerHTML = `<strong>${escapeHTML(res.teacher_name)}</strong><br><span style="font-size:12px;">${classStr}</span>`;
+            if (res.purpose) {
+              td.title = `사용 목적: ${res.purpose}`;
+            }
+          } else {
+            if (isPast) {
+              td.textContent = "-";
+            } else {
+              td.textContent = "+ 예약";
+              td.style.cursor = "pointer";
+              td.style.color = "var(--text-sub)";
+              td.onclick = () => {
+                document.getElementById("room-select").value = roomId;
+                document.getElementById("reserved-date").value = dateStr;
+                document.getElementById("period-select").value = p;
+                document.getElementById("teacher-name").focus();
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              };
+            }
+          }
+          tr.appendChild(td);
+        }
+        tbody.appendChild(tr);
+      }
+    }
+
+    // ==========================================
+    // F3. 검색 및 F4. 취소
+    // ==========================================
+    function debounceSearch() {
+      clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = setTimeout(() => {
+        loadReservationList();
+      }, 300);
+    }
+
+    function resetSearch() {
+      document.getElementById("search-teacher").value = "";
+      document.getElementById("search-room").value = "";
+      document.getElementById("search-date").value = "";
+      document.getElementById("search-past").checked = false;
+      loadReservationList();
+    }
+
+    async function loadReservationList() {
+      const teacherQuery = document.getElementById("search-teacher").value.trim();
+      const roomQuery = document.getElementById("search-room").value;
+      const dateQuery = document.getElementById("search-date").value;
+      const showPast = document.getElementById("search-past").checked;
+      const todayStr = getLocalTodayString();
+
+      let query = db.from("reservations").select("*, rooms(name)").order("reserved_date", { ascending: true }).order("period", { ascending: true }).limit(200);
+
+      if (!showPast) {
+        query = query.gte("reserved_date", todayStr);
+      }
+      if (roomQuery) {
+        query = query.eq("room_id", roomQuery);
+      }
+      if (dateQuery) {
+        query = query.eq("reserved_date", dateQuery);
+      }
+      if (teacherQuery) {
+        query = query.ilike("teacher_name", `%${teacherQuery}%`);
+      }
+
+      const { data, error } = await query;
+      const tbody = document.getElementById("reservation-list-tbody");
+      tbody.innerHTML = "";
+
+      if (error) {
+        showToast("검색 중 오류가 발생했습니다.", "error");
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--text-sub); padding:24px;">조건에 맞는 예약이 없습니다.</td></tr>`;
+        return;
+      }
+
+      data.forEach(res => {
+        const tr = document.createElement("tr");
+        const roomName = res.rooms ? res.rooms.name : "특별실";
+        const classStr = res.class_no ? `${res.grade}학년 ${res.class_no}반` : `${res.grade}학년`;
+
+        tr.innerHTML = `
+          <td>${formatDisplayDate(res.reserved_date)}</td>
+          <td><strong>${res.period}교시</strong> · ${escapeHTML(roomName)}</td>
+          <td>${escapeHTML(res.teacher_name)} 선생님 · ${classStr}</td>
+          <td style="color:var(--text-sub); max-width:200px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${escapeHTML(res.purpose || '')}">${escapeHTML(res.purpose || '-')}</td>
+          <td><button class="cancel-btn" onclick="cancelReservation(${res.id}, '${res.reserved_date}', ${res.period}, '${escapeHTML(roomName)}', '${escapeHTML(res.teacher_name)}')">취소</button></td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    async function cancelReservation(id, dateStr, period, roomName, teacherName) {
+      if (!confirm(`${formatDisplayDate(dateStr)} ${period}교시 ${roomName} (${teacherName}) 예약을 취소할까요?`)) {
+        return;
+      }
+
+      const { data, error } = await db.from("reservations").delete().eq("id", id).select();
+
+      if (error) {
+        handleDbError(error);
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        showToast("이미 취소되었거나 삭제 권한이 없습니다.", "error");
+      } else {
+        showToast("예약이 취소되었습니다.", "success");
+      }
+
+      loadWeeklySchedule();
+      loadReservationList();
+    }
+
+    // ==========================================
+    // F5. 통계 (Chart.js)
+    // ==========================================
+    async function loadStats() {
+      const periodType = document.getElementById("stats-period-type").value;
+      const today = new Date();
+      let startDate, endDate, weekdaysCount = 0;
+
+      if (periodType === 'week') {
+        const mon = getMonday(today);
+        const fri = new Date(mon);
+        fri.setDate(fri.getDate() + 4);
+        startDate = formatDateStr(mon);
+        endDate = formatDateStr(fri);
+        weekdaysCount = 5;
+      } else {
+        const y = today.getFullYear();
+        const m = today.getMonth();
+        const firstDay = new Date(y, m, 1);
+        const lastDay = new Date(y, m + 1, 0);
+        startDate = formatDateStr(firstDay);
+        endDate = formatDateStr(lastDay);
+
+        // 이번 달 평일 수 계산
+        let cur = new Date(firstDay);
+        while (cur <= lastDay) {
+          const day = cur.getDay();
+          if (day !== 0 && day !== 6) weekdaysCount++;
+          cur.setDate(cur.getDate() + 1);
+        }
+      }
+
+      const totalSlotsPerRoom = weekdaysCount * 6;
+
+      // 기간 내 예약 데이터 불러오기
+      const { data: reservations, error } = await db
+        .from("reservations")
+        .select("*, rooms(name)")
+        .gte("reserved_date", startDate)
+        .lte("reserved_date", endDate);
+
+      if (error) {
+        showToast("통계 데이터를 불러오지 못했습니다.", "error");
+        return;
+      }
+
+      const resList = reservations || [];
+      const totalReservations = resList.length;
+
+      // 요약 줄 렌더링
+      const summaryBox = document.getElementById("stats-summary-box");
+      summaryBox.innerHTML = `
+        <div class="stat-box"><div>조회 기간</div><div class="value" style="font-size:16px; margin-top:6px;">${startDate} ~ ${endDate}</div></div>
+        <div class="stat-box"><div>평일 수</div><div class="value">${weekdaysCount}일</div></div>
+        <div class="stat-box"><div>특별실당 총 칸수</div><div class="value">${totalSlotsPerRoom}칸</div></div>
+        <div class="stat-box"><div>총 예약 건수</div><div class="value">${totalReservations}건</div></div>
+      `;
+
+      // 1. 특별실별 이용률 계산
+      const roomUsageMap = {};
+      roomsData.forEach(r => { roomUsageMap[r.id] = { name: r.name, count: 0 }; });
+      resList.forEach(r => {
+        if (roomUsageMap[r.room_id]) roomUsageMap[r.room_id].count++;
+      });
+
+      const roomNames = [];
+      const roomUsageRates = [];
+      const roomCounts = [];
+
+      Object.values(roomUsageMap).forEach(item => {
+        roomNames.push(item.name);
+        const rate = totalSlotsPerRoom > 0 ? ((item.count / totalSlotsPerRoom) * 100).toFixed(1) : 0;
+        roomUsageRates.push(parseFloat(rate));
+        roomCounts.push(item.count);
+      });
+
+      renderRoomUsageChart(roomNames, roomUsageRates, roomCounts, totalSlotsPerRoom);
+
+      // 2. 요일·교시별 혼잡도 계산 (월~금: 1~5, 교시: 1~6)
+      // 버블 데이터 구조: { x: 요일(1~5), y: 교시(1~6), r: 건수 }
+      const congestionMap = {};
+      for (let d = 1; d <= 5; d++) {
+        for (let p = 1; p <= 6; p++) {
+          congestionMap[`${d}_${p}`] = 0;
+        }
+      }
+      resList.forEach(r => {
+        const dObj = new Date(r.reserved_date);
+        const dayOfWeek = dObj.getDay(); // 1(월)~5(금)
+        if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+          const key = `${dayOfWeek}_${r.period}`;
+          if (congestionMap[key] !== undefined) congestionMap[key]++;
+        }
+      });
+
+      const bubbleData = [];
+      for (let d = 1; d <= 5; d++) {
+        for (let p = 1; p <= 6; p++) {
+          const count = congestionMap[`${d}_${p}`];
+          if (count > 0) {
+            bubbleData.push({ x: d, y: p, r: Math.max(count * 4, 6) }); // 시각적 크기 조정
+          }
+        }
+      }
+      renderCongestionChart(bubbleData);
+
+      // 3. 학년별 이용 횟수 계산 (1~6학년)
+      const gradeCounts = [0, 0, 0, 0, 0, 0];
+      resList.forEach(r => {
+        if (r.grade >= 1 && r.grade <= 6) {
+          gradeCounts[r.grade - 1]++;
+        }
+      });
+      renderGradeCountChart(gradeCounts);
+    }
+
+    function renderRoomUsageChart(labels, rates, counts, totalSlots) {
+      const ctx = document.getElementById("chart-room-usage").getContext("2d");
+      if (chartRoomUsageInstance) chartRoomUsageInstance.destroy();
+
+      chartRoomUsageInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: '이용률 (%)',
+            data: rates,
+            backgroundColor: '#10b981',
+            borderRadius: 6
+          }]
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: { min: 0, max: 100, ticks: { callback: v => v + '%' } }
+          },
+          plugins: {
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  const idx = context.dataIndex;
+                  return ` ${context.raw}% (${counts[idx]}건 / ${totalSlots}칸)`;
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+
+    function renderCongestionChart(bubbleData) {
+      const ctx = document.getElementById("chart-congestion").getContext("2d");
+      if (chartCongestionInstance) chartCongestionInstance.destroy();
+
+      const dayLabels = ['', '월', '화', '수', '목', '금'];
+
+      chartCongestionInstance = new Chart(ctx, {
+        type: 'bubble',
+        data: {
+          datasets: [{
+            label: '예약 건수 혼잡도',
+            data: bubbleData,
+            backgroundColor: 'rgba(16, 185, 129, 0.6)'
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: {
+              min: 0.5,
+              max: 5.5,
+              ticks: {
+                stepSize: 1,
+                callback: v => dayLabels[v] || ''
+              }
+            },
+            y: {
+              min: 0.5,
+              max: 6.5,
+              reverse: true, // 1교시가 위로 오도록
+              ticks: {
+                stepSize: 1,
+                callback: v => `${v}교시`
+              }
+            }
+          }
+        }
+      });
+    }
+
+    function renderGradeCountChart(gradeCounts) {
+      const ctx = document.getElementById("chart-grade-count").getContext("2d");
+      if (chartGradeCountInstance) chartGradeCountInstance.destroy();
+
+      chartGradeCountInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: ['1학년', '2학년', '3학년', '4학년', '5학년', '6학년'],
+          datasets: [{
+            label: '예약 건수',
+            data: gradeCounts,
+            backgroundColor: '#0369a1',
+            borderRadius: 6
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: { precision: 0 } // 정수 눈금
+            }
+          }
+        }
+      });
+    }
+
+    // ==========================================
+    // 오류 처리 매핑
+    // ==========================================
+    function handleDbError(error) {
+      const code = error.code;
+      const message = error.message;
+
+      if (code === '23505') {
+        showToast("이미 예약된 시간입니다. 다른 교시나 날짜를 골라 주세요.", "error");
+      } else if (code === '23514') {
+        showToast("입력값이 허용 범위를 벗어났습니다.", "error");
+      } else if (code === '23503') {
+        showToast("존재하지 않는 특별실입니다. 새로고침 후 다시 시도해 주세요.", "error");
+      } else if (code === '42501') {
+        showToast("권한이 없습니다. Supabase의 RLS 정책을 확인해 주세요.", "error");
+      } else {
+        showToast(`오류가 발생했습니다: ${message}`, "error");
+      }
+    }
+  </script>
+</body>
+</html>
